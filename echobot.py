@@ -9,9 +9,9 @@ import logging
 import time
 from datetime import datetime
 from urllib.parse import urlparse
-import boto3
-from botocore.exceptions import ClientError
-import io
+from image_generation import ImageGenerator
+from s3_storage import S3Storage
+from config import Config
 
 
 logging.basicConfig(level=logging.INFO)
@@ -38,6 +38,8 @@ class EchoBot(fp.PoeBot):
         logger.info(f"Last Message: {last_message}")
 
         if last_message.startswith("/generate"):
+            image_generator = ImageGenerator(api_key=Config.STABILITY_API_KEY)
+            s3_storage = S3Storage(bucket_name=Config.S3_BUCKET_NAME)
             lines = last_message.split("\n")
             prompt = lines[0][10:].strip()
 
@@ -80,16 +82,20 @@ class EchoBot(fp.PoeBot):
                 image = None
 
             try:
-                api_key = os.environ["STABILITY_API_KEY"]  
                 logger.info(f"Generating image for prompt: {prompt}")
                 logger.info(f"Negative prompt: {negative_prompt}")
-                image_data, filename = self.generate_image(
-                    prompt, api_key, negative_prompt, image, strength, model, seed, output_format, aspect_ratio
+                image_data, filename = image_generator.generate_image(
+                    prompt, negative_prompt, image, strength, model, seed, output_format, aspect_ratio
                 )
 
+                s3_storage.save_image(image_data, filename)
+                image_bytes = io.BytesIO()
+                image.save(image_bytes, format=output_image_format)
+                image_bytes.seek(0)
+                s3_storage.save_image(image_bytes.getvalue(), filename)
                 await self.post_message_attachment(
                     message_id=request.message_id,
-                    file_data=image_data,
+                    file_data=image_bytes.getvalue(),
                     filename=filename
                 )
 
@@ -213,11 +219,12 @@ class EchoBot(fp.PoeBot):
                         output_image_format = "JPEG"
 
             try:
-                api_key = os.environ["FIREWORKS_API_KEY"]  
+                image_generator = ImageGenerator(api_key=Config.FIREWORKS_API_KEY)
+                s3_storage = S3Storage(bucket_name=Config.S3_BUCKET_NAME)
                 logger.info(f"Generating image using Fireworks AI API for prompt: {prompt}")
                 logger.info(f"Negative prompt: {negative_prompt}")
-                image_data, filename = await self.generate_fireworks_image(
-                    prompt, api_key, negative_prompt, height, width, cfg_scale, sampler, samples, seed, steps, safety_check, output_image_format
+                image, filename = await image_generator.generate_fireworks_image(
+                    prompt, negative_prompt, height, width, cfg_scale, sampler, samples, seed, steps, safety_check, output_image_format
                 )
 
                 await self.post_message_attachment(
