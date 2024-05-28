@@ -11,6 +11,9 @@ from datetime import datetime
 from urllib.parse import urlparse
 from image_generation import ImageGenerator
 from s3_storage import S3Storage
+import io
+import boto3
+from botocore.exceptions import ClientError
 from config import Config
 
 
@@ -89,6 +92,7 @@ class EchoBot(fp.PoeBot):
                 )
 
                 s3_storage.save_image(image_data, filename)
+                output_image_format = output_format or "jpeg"
                 image_bytes = io.BytesIO()
                 image.save(image_bytes, format=output_image_format)
                 image_bytes.seek(0)
